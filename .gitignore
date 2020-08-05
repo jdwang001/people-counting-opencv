@@ -1,0 +1,7 @@
+wzd.py
+end.py
+output/
+videos/realen*
+.idea/
+.DS_Store
+*.pyc
