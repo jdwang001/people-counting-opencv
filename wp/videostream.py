@@ -56,6 +56,8 @@ class FileVideoStream:
                     #self.Q.put(resizeframe)
                     #resizeframe = cv2.resize(frame, (width, height)
                     self.Q.put(frame)
+                else:
+                    print("video frame is full")
         except Exception as exc:
             print ('FileVideoStream exception ',exc)
 

@@ -21,6 +21,15 @@ import imutils
 import time
 import dlib
 import cv2
+import threading
+import schedule
+
+
+def to_centerline(arg):
+    x, y,  = map(int, arg.split(','))
+    return x, y
+
+
 
 # construct the argument parse and parse the arguments
 ap = argparse.ArgumentParser()
@@ -36,13 +45,20 @@ ap.add_argument("-c", "--confidence", type=float, default=0.4,
 	help="minimum probability to filter weak detections")
 ap.add_argument("-s", "--skip-frames", type=int, default=30,
 	help="# of skip frames between detections")
+ap.add_argument("-l", "--line-center",  action="append", type=to_centerline,
+				help="# center line to counter people")
 args = vars(ap.parse_args())
+
+
+
+print("center line is :", args["line_center"], "skip-frames",args["skip_frames"])
 
 
 FRAMEBUFFER = 2048
 
 # initialize the list of class labels MobileNet SSD was trained to
 # detect
+#CLASSES = ["person"]
 CLASSES = ["background", "aeroplane", "bicycle", "bird", "boat",
 	"bottle", "bus", "car", "cat", "chair", "cow", "diningtable",
 	"dog", "horse", "motorbike", "person", "pottedplant", "sheep",
@@ -61,8 +77,8 @@ if not args.get("input", False):
 # otherwise, grab a reference to the video file
 else:
 	print("[INFO] opening video file...")
-	#vs = cv2.VideoCapture(args["input"])
-	vs = FileVideoStream(args["input"],FRAMEBUFFER).start()
+	vs = cv2.VideoCapture(args["input"])
+	#vs = FileVideoStream(args["input"],FRAMEBUFFER).start()
 
 # initialize the video writer (we'll instantiate later if need be)
 writer = None
@@ -90,11 +106,28 @@ totalDown = 0
 totalUp = 0
 totalID = 0
 
+
+countres = {}
+
+
+def job():
+    # print("I'm running on thread %s" % threading.current_thread())
+	print("get all count ",countres)
+
+def run_threaded(job_func):
+    job_thread = threading.Thread(target=job_func)
+    job_thread.start()
+
+schedule.every(5).seconds.do(run_threaded, job)
+schedule.every(10).seconds.do(run_threaded, job)
+
+
 # start the frames per second throughput estimator
 fps = FPS().start()
 
 # loop over frames from the video stream
 while True:
+	schedule.run_pending()
 	# grab the next frame and handle if we are reading from either
 	# VideoCapture or VideoStream
 	frame = vs.read()
@@ -112,8 +145,10 @@ while True:
 		vidsrc = args["input"].split(':',1)
 		if vidsrc[0] == "rtsp":
 			print("lost connect,begain reconnect")
+			#vs.stop()
+			#vs = FileVideoStream(args["input"],FRAMEBUFFER).start()
 			vs.stop()
-			vs = FileVideoStream(args["input"],FRAMEBUFFER).start()
+			vs = cv2.VideoCapture(args["input"])
 			time.sleep(3)
 			continue
 		else:
@@ -124,14 +159,24 @@ while True:
 	# less data we have, the faster we can process it), then convert
 	# the frame from BGR to RGB for dlib
 	frame = imutils.resize(frame, width=500)
+	#frame = imutils.resize(frame, width=450)
+
+	# cut roi from video
+	# fram[y1:y2,x1,x2]  opencv the left up is 0,0
+	#roi = frame[0:200,300:]
+	#roi = frame[0:200,300:]
+	#frame = roi
+
 	rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
 	# if the frame dimensions are empty, set them
 	if W is None or H is None:
 		(H, W) = frame.shape[:2]
 
-	CENTERLINE["ORG"] = (0, H // 2+30)
-	CENTERLINE["END"] = (W, H // 2+30)
+
+
+	CENTERLINE["ORG"] = (0, H // 2)
+	CENTERLINE["END"] = (W, H // 2)
 
 	# if we are supposed to be writing a video to disk, initialize
 	# the writer
@@ -217,8 +262,9 @@ while True:
 	# draw a horizontal line in the center of the frame -- once an
 	# object crosses this line we will determine whether they were
 	# moving 'up' or 'down'
-	# cv2.line(frame, (0, H // 2), (W, H // 2), (0, 255, 255), 2)
-	cv2.line(frame, CENTERLINE["ORG"], CENTERLINE["END"], (0, 255, 255), 2)
+	#cv2.line(frame, args["line_center"][0], args["line_center"][1], (255, 255, 255), 2)
+	cv2.line(frame, (0,H//2),(W,H//2) , (255, 255, 255), 2)
+	#cv2.line(frame, CENTERLINE["ORG"], CENTERLINE["END"], (0, 255, 255), 2)
 
 	# use the centroid tracker to associate the (1) old object
 	# centroids with (2) the newly computed object centroids
@@ -250,16 +296,16 @@ while True:
 				# if the direction is negative (indicating the object
 				# is moving up) AND the centroid is above the center
 				# line, count the object
-				# if direction < 0 and centroid[1] < H // 2:
-				if direction < 0 and centroid[1] < CENTERLINE["ORG"][1] and centroid[1] > CENTERLINE["ORG"][1]-20:
+				if direction < 0 and centroid[1] < H // 2:
+				# if direction < 0 and centroid[1] < CENTERLINE["ORG"][1] and centroid[1] > CENTERLINE["ORG"][1]-20:
 					totalUp += 1
 					to.counted = True
 
 				# if the direction is positive (indicating the object
 				# is moving down) AND the centroid is below the
 				# center line, count the object
-				# elif direction > 0 and centroid[1] > H // 2:
-				elif direction > 0 and centroid[1] > CENTERLINE["ORG"][1] and centroid[1] < CENTERLINE["ORG"][1]+30:
+				elif direction > 0 and centroid[1] > H // 2:
+				# elif direction > 0 and centroid[1] > CENTERLINE["ORG"][1] and centroid[1] < CENTERLINE["ORG"][1]+30:
 					totalDown += 1
 					to.counted = True
 
@@ -282,11 +328,18 @@ while True:
 		("Status", status),
 	]
 
+	countres = info
+
 	# loop over the info tuples and draw them on our frame
 	for (i, (k, v)) in enumerate(info):
 		text = "{}: {}".format(k, v)
 		cv2.putText(frame, text, (10, H - ((i * 20) + 20)),
 			cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+	# add display fps
+	fps.stop()
+	fps.elapsed()
+	fpstext = "{:.2f}".format(fps.fps())
+	cv2.putText(frame,fpstext, (10, H), cv2.FONT_HERSHEY_SIMPLEX,0.6,(0,0,255),2)
 
 	# check to see if we should write the frame to disk
 	if writer is not None:
