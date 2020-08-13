@@ -12,6 +12,7 @@
 # import the necessary packages
 from pyimagesearch.centroidtracker import CentroidTracker
 from pyimagesearch.trackableobject import TrackableObject
+from datetime import datetime
 from wp.videostream import FileVideoStream
 from imutils.video import VideoStream
 from imutils.video import FPS
@@ -22,7 +23,10 @@ import time
 import dlib
 import cv2
 import threading
-import schedule
+from wp.tools import postjsoninfo
+# import requests
+#import schedule
+from apscheduler.schedulers.background import BackgroundScheduler
 
 
 def to_centerline(arg):
@@ -110,16 +114,39 @@ totalID = 0
 countres = {}
 
 
-def job():
+def clearnum():
+	print("clearnum ")
+	global totalFrames,totalDown,totalUp,totalID
+	totalFrames = 0
+	totalDown = 0
+	totalUp = 0
+	totalID = 0
+
+def postnum():
     # print("I'm running on thread %s" % threading.current_thread())
+	print('Tick! The time is: %s' % datetime.now())
 	print("get all count ",countres)
+	unixstamp = int(time.time())
+	countres['unixstamp'] = unixstamp
+	postjsoninfo(countres)
 
-def run_threaded(job_func):
-    job_thread = threading.Thread(target=job_func)
-    job_thread.start()
+scheduler = BackgroundScheduler()
+scheduler.add_job(postnum, 'cron', hour='09-22', minute='59')
+#scheduler.add_job(clearnum, 'cron', hour='8', minute='59')
+scheduler.add_job(clearnum, 'interval', seconds=5)
+scheduler.add_job(postnum, 'interval', seconds=1)
 
-schedule.every(5).seconds.do(run_threaded, job)
-schedule.every(10).seconds.do(run_threaded, job)
+try:
+	scheduler.start()
+except (KeyboardInterrupt, SystemExit):
+    scheduler.shutdown()
+
+# def run_threaded(job_func):
+#     job_thread = threading.Thread(target=job_func)
+#     job_thread.start()
+
+# schedule.every(5).seconds.do(run_threaded, job)
+#schedule.every(10).seconds.do(run_threaded, job)
 
 
 # start the frames per second throughput estimator
@@ -127,7 +154,7 @@ fps = FPS().start()
 
 # loop over frames from the video stream
 while True:
-	schedule.run_pending()
+	# schedule.run_pending()
 	# grab the next frame and handle if we are reading from either
 	# VideoCapture or VideoStream
 	frame = vs.read()
@@ -164,7 +191,7 @@ while True:
 	# cut roi from video
 	# fram[y1:y2,x1,x2]  opencv the left up is 0,0
 	#roi = frame[0:200,300:]
-	#roi = frame[0:200,300:]
+	#roi = frame[0:499,300:]
 	#frame = roi
 
 	rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -174,9 +201,10 @@ while True:
 		(H, W) = frame.shape[:2]
 
 
+	if args["line_center"] is not None:
+		CENTERLINE["ORG"] = args["line_center"][0]
+		CENTERLINE["END"] = args["line_center"][1]
 
-	CENTERLINE["ORG"] = (0, H // 2)
-	CENTERLINE["END"] = (W, H // 2)
 
 	# if we are supposed to be writing a video to disk, initialize
 	# the writer
@@ -262,8 +290,8 @@ while True:
 	# draw a horizontal line in the center of the frame -- once an
 	# object crosses this line we will determine whether they were
 	# moving 'up' or 'down'
-	#cv2.line(frame, args["line_center"][0], args["line_center"][1], (255, 255, 255), 2)
-	cv2.line(frame, (0,H//2),(W,H//2) , (255, 255, 255), 2)
+	cv2.line(frame, args["line_center"][0], args["line_center"][1], (255, 255, 255), 2)
+	# cv2.line(frame, (0,H//2),(W,H//2) , (255, 255, 255), 2)
 	#cv2.line(frame, CENTERLINE["ORG"], CENTERLINE["END"], (0, 255, 255), 2)
 
 	# use the centroid tracker to associate the (1) old object
@@ -296,7 +324,8 @@ while True:
 				# if the direction is negative (indicating the object
 				# is moving up) AND the centroid is above the center
 				# line, count the object
-				if direction < 0 and centroid[1] < H // 2:
+				#if direction < 0 and centroid[1] < H // 2:
+				if direction < 0 and centroid[1] < CENTERLINE["ORG"][1]:
 				# if direction < 0 and centroid[1] < CENTERLINE["ORG"][1] and centroid[1] > CENTERLINE["ORG"][1]-20:
 					totalUp += 1
 					to.counted = True
@@ -304,7 +333,8 @@ while True:
 				# if the direction is positive (indicating the object
 				# is moving down) AND the centroid is below the
 				# center line, count the object
-				elif direction > 0 and centroid[1] > H // 2:
+				#elif direction > 0 and centroid[1] > H // 2:
+				elif direction > 0 and centroid[1] > CENTERLINE["ORG"][1]:
 				# elif direction > 0 and centroid[1] > CENTERLINE["ORG"][1] and centroid[1] < CENTERLINE["ORG"][1]+30:
 					totalDown += 1
 					to.counted = True
@@ -328,7 +358,9 @@ while True:
 		("Status", status),
 	]
 
-	countres = info
+	countres['up'] = totalUp
+	countres['down'] = totalDown
+	countres['id'] = totalID
 
 	# loop over the info tuples and draw them on our frame
 	for (i, (k, v)) in enumerate(info):
@@ -377,3 +409,4 @@ else:
 
 # close any open windows
 cv2.destroyAllWindows()
+scheduler.shutdown()
