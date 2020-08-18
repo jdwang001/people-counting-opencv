@@ -10,6 +10,7 @@
 #	--output output/webcam_output.avi
 
 # import the necessary packages
+import cv2
 from pyimagesearch.centroidtracker import CentroidTracker
 from pyimagesearch.trackableobject import TrackableObject
 from datetime import datetime
@@ -21,12 +22,13 @@ import argparse
 import imutils
 import time
 import dlib
-import cv2
+import re
 import threading
 from wp.tools import postjsoninfo
 # import requests
 #import schedule
 from apscheduler.schedulers.background import BackgroundScheduler
+
 
 
 def to_centerline(arg):
@@ -108,10 +110,10 @@ trackableObjects = {}
 totalFrames = 0
 totalDown = 0
 totalUp = 0
-totalID = 0
+totalID = 'ID 0'
 
 
-countres = {}
+counters = {}
 
 
 def clearnum():
@@ -120,21 +122,22 @@ def clearnum():
 	totalFrames = 0
 	totalDown = 0
 	totalUp = 0
-	totalID = 0
+	totalID = 'ID 0'
 
 def postnum():
     # print("I'm running on thread %s" % threading.current_thread())
 	print('Tick! The time is: %s' % datetime.now())
-	print("get all count ",countres)
+	print("get all count ",counters)
 	unixstamp = int(time.time())
-	countres['unixstamp'] = unixstamp
-	postjsoninfo(countres)
+	counters['unixstamp'] = unixstamp
+	postjsoninfo(counters)
 
 scheduler = BackgroundScheduler()
-scheduler.add_job(postnum, 'cron', hour='09-22', minute='59')
-#scheduler.add_job(clearnum, 'cron', hour='8', minute='59')
-scheduler.add_job(clearnum, 'interval', seconds=5)
-scheduler.add_job(postnum, 'interval', seconds=1)
+#scheduler.add_job(postnum, 'cron', hour='09-22', minute='59')
+scheduler.add_job(clearnum, 'cron', hour='8', minute='59')
+#scheduler.add_job(clearnum, 'interval', seconds=5)
+#scheduler.add_job(postnum, 'interval', seconds=1)
+scheduler.add_job(postnum, 'cron', hour='09-22', minute='*/5')
 
 try:
 	scheduler.start()
@@ -151,6 +154,17 @@ except (KeyboardInterrupt, SystemExit):
 
 # start the frames per second throughput estimator
 fps = FPS().start()
+
+if args["input"] is not None:
+	vidsrc = args["input"].split(':',1)
+	if vidsrc[0] == "rtsp":
+		id = re.split('[:/]',vidsrc[1])
+		counters['ip'] = id[2]
+		print(vidsrc)
+		print(counters['ip'])
+	else:
+		counters['ip'] = '0.0.0.0' # for test
+
 
 # loop over frames from the video stream
 while True:
@@ -358,9 +372,9 @@ while True:
 		("Status", status),
 	]
 
-	countres['up'] = totalUp
-	countres['down'] = totalDown
-	countres['id'] = totalID
+	counters['up'] = totalUp
+	counters['down'] = totalDown
+	counters['id'] = int(totalID.split(' ')[1])
 
 	# loop over the info tuples and draw them on our frame
 	for (i, (k, v)) in enumerate(info):
