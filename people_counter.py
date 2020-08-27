@@ -28,6 +28,8 @@ from wp.tools import postjsoninfo
 # import requests
 #import schedule
 from apscheduler.schedulers.background import BackgroundScheduler
+from wp.log import Log
+import platform
 
 
 
@@ -57,10 +59,12 @@ args = vars(ap.parse_args())
 
 
 
-print("center line is :", args["line_center"], "skip-frames",args["skip_frames"])
+log = Log(__name__).getlog()
+log.info("begain log start")
+log.info("center line is : %s skip-frames %s ", args["line_center"], args["skip_frames"])
 
 
-FRAMEBUFFER = 2048
+FRAMEBUFFER = 20480
 
 # initialize the list of class labels MobileNet SSD was trained to
 # detect
@@ -71,20 +75,8 @@ CLASSES = ["background", "aeroplane", "bicycle", "bird", "boat",
 	"sofa", "train", "tvmonitor"]
 
 # load our serialized model from disk
-print("[INFO] loading model...")
+log.info("[INFO] loading model...")
 net = cv2.dnn.readNetFromCaffe(args["prototxt"], args["model"])
-
-# if a video path was not supplied, grab a reference to the webcam
-if not args.get("input", False):
-	print("[INFO] starting video stream...")
-	vs = VideoStream(src=0).start()
-	time.sleep(2.0)
-
-# otherwise, grab a reference to the video file
-else:
-	print("[INFO] opening video file...")
-	vs = cv2.VideoCapture(args["input"])
-	#vs = FileVideoStream(args["input"],FRAMEBUFFER).start()
 
 # initialize the video writer (we'll instantiate later if need be)
 writer = None
@@ -102,6 +94,7 @@ CENTERLINE = {}
 # each of our dlib correlation trackers, followed by a dictionary to
 # map each unique object ID to a TrackableObject
 ct = CentroidTracker(maxDisappeared=40, maxDistance=50)
+#ct = CentroidTracker(maxDisappeared=10, maxDistance=30)
 trackers = []
 trackableObjects = {}
 
@@ -116,8 +109,12 @@ totalID = 'ID 0'
 counters = {}
 
 
+
+sysname = platform.system()
+
+
 def clearnum():
-	print("clearnum ")
+	log.info("clearnum ")
 	global totalFrames,totalDown,totalUp,totalID
 	totalFrames = 0
 	totalDown = 0
@@ -125,9 +122,9 @@ def clearnum():
 	totalID = 'ID 0'
 
 def postnum():
-    # print("I'm running on thread %s" % threading.current_thread())
-	print('Tick! The time is: %s' % datetime.now())
-	print("get all count ",counters)
+    # log.info("I'm running on thread %s" % threading.current_thread())
+	log.info('Tick! The time is: %s' % datetime.now())
+	log.info("get all count ",counters)
 	unixstamp = int(time.time())
 	counters['unixstamp'] = unixstamp
 	postjsoninfo(counters)
@@ -155,15 +152,43 @@ except (KeyboardInterrupt, SystemExit):
 # start the frames per second throughput estimator
 fps = FPS().start()
 
+
+videotype = "rtsp"
 if args["input"] is not None:
 	vidsrc = args["input"].split(':',1)
 	if vidsrc[0] == "rtsp":
-		id = re.split('[:/]',vidsrc[1])
-		counters['ip'] = id[2]
-		print(vidsrc)
-		print(counters['ip'])
+		videotype = "rtsp"
+		if sysname == "Linux":
+			id = re.split('[:@]',vidsrc[1])
+			counters['ip'] = id[2]
+			log.info(vidsrc)
+			log.info(counters['ip'])
+		else:
+			id = re.split('[:/]',vidsrc[1])
+			counters['ip'] = id[2]
+			log.info("vidsrc %s",vidsrc)
+			log.info("Camera ip is: %s",counters['ip'])
+
 	else:
+		videotype = "file"
 		counters['ip'] = '0.0.0.0' # for test
+
+# if a video path was not supplied, grab a reference to the webcam
+if not args.get("input", False):
+	log.info("[INFO] starting video stream...")
+	vs = VideoStream(src=0).start()
+	time.sleep(2.0)
+# otherwise, grab a reference to the video file
+else:
+	log.info("opening video file...")
+	#vs = cv2.VideoCapture(args["input"])
+	if videotype == "file":
+		vs = FileVideoStream(args["input"],FRAMEBUFFER).start()
+	else:
+		if sysname == "Linux":
+			vs = FileVideoStream(args["input"]+"/cam/realmonitor?channel=1&subtype=1",FRAMEBUFFER).start()
+		else:
+			vs = FileVideoStream(args["input"],FRAMEBUFFER).start()
 
 
 # loop over frames from the video stream
@@ -177,19 +202,30 @@ while True:
 	# if we are viewing a video and we did not grab a frame then we
 	# have reached the end of the video
 	# if args["input"] is not None and frame is None:
-	# 	print("lost connect,begain reconnect")
+	# 	log.info("lost connect,begain reconnect")
 	# 	vs = cv2.VideoCapture(args["input"])
 	# 	time.sleep(3)
 	# 	continue
+
+	# if args["input"] is not None and frame is None:
+	# 	vidsrc = args["input"].split(':',1)
+	# 	if vidsrc[0] == "rtsp":
+	# 		log.error("rtsp stream is lost,wait reconnect")
+	# 		time.sleep(3)
+	# 		continue
+	# 	else:
+	# 		break
+
 	if args["input"] is not None and frame is None:
-		print("totalID:",totalID,"totalDown:",totalDown,"totalUp:",totalUp,"totalFrame:",totalFrames)
+		log.info("totalID: %s totalDown: %d totalUp: %d totalFrame: %d",totalID,totalDown,totalUp,totalFrames)
 		vidsrc = args["input"].split(':',1)
 		if vidsrc[0] == "rtsp":
-			print("lost connect,begain reconnect")
+			log.info("lost connect,begain reconnect")
 			#vs.stop()
-			#vs = FileVideoStream(args["input"],FRAMEBUFFER).start()
-			vs.stop()
-			vs = cv2.VideoCapture(args["input"])
+			vs.release()
+			vs = FileVideoStream(args["input"],FRAMEBUFFER).start()
+			#vs.stop()
+			#vs = cv2.VideoCapture(args["input"])
 			time.sleep(3)
 			continue
 		else:
@@ -199,7 +235,7 @@ while True:
 	# resize the frame to have a maximum width of 500 pixels (the
 	# less data we have, the faster we can process it), then convert
 	# the frame from BGR to RGB for dlib
-	frame = imutils.resize(frame, width=500)
+	#frame = imutils.resize(frame, width=500)
 	#frame = imutils.resize(frame, width=450)
 
 	# cut roi from video
@@ -406,8 +442,8 @@ while True:
 
 # stop the timer and display FPS information
 fps.stop()
-print("[INFO] elapsed time: {:.2f}".format(fps.elapsed()))
-print("[INFO] approx. FPS: {:.2f}".format(fps.fps()))
+log.info("[INFO] elapsed time: {:.2f}".format(fps.elapsed()))
+log.info("[INFO] approx. FPS: {:.2f}".format(fps.fps()))
 
 # check to see if we need to release the video writer pointer
 if writer is not None:
@@ -415,7 +451,8 @@ if writer is not None:
 
 # if we are not using a video file, stop the camera video stream
 if not args.get("input", False):
-	vs.stop()
+	#vs.stop()
+	vs.release()
 
 # otherwise, release the video file pointer
 else:
