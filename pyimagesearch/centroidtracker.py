@@ -4,12 +4,12 @@ from collections import OrderedDict
 import numpy as np
 
 class CentroidTracker:
-	def __init__(self, maxDisappeared=50, maxDistance=50):
+	def __init__(self, maxDisappeared=50, maxDistance=50, nextobjectid=0):
 		# initialize the next unique object ID along with two ordered
 		# dictionaries used to keep track of mapping a given object
 		# ID to its centroid and number of consecutive frames it has
 		# been marked as "disappeared", respectively
-		self.nextObjectID = 0
+		self.nextObjectID = nextobjectid
 		self.objects = OrderedDict()
 		self.disappeared = OrderedDict()
 

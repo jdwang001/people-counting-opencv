@@ -22,22 +22,20 @@ import argparse
 import imutils
 import time
 import dlib
+import ast
 import re
-import threading
+import os
 from wp.tools import postjsoninfo
-# import requests
-#import schedule
 from apscheduler.schedulers.background import BackgroundScheduler
 from wp.log import Log
 import platform
 
 
+FRAMEBUFFER = 20480
 
 def to_centerline(arg):
     x, y,  = map(int, arg.split(','))
     return x, y
-
-
 
 # construct the argument parse and parse the arguments
 ap = argparse.ArgumentParser()
@@ -59,23 +57,15 @@ args = vars(ap.parse_args())
 
 
 
-log = Log(__name__).getlog()
-log.info("begain log start")
-log.info("center line is : %s skip-frames %s ", args["line_center"], args["skip_frames"])
-
-
-FRAMEBUFFER = 20480
-
 # initialize the list of class labels MobileNet SSD was trained to
 # detect
-#CLASSES = ["person"]
 CLASSES = ["background", "aeroplane", "bicycle", "bird", "boat",
 	"bottle", "bus", "car", "cat", "chair", "cow", "diningtable",
 	"dog", "horse", "motorbike", "person", "pottedplant", "sheep",
 	"sofa", "train", "tvmonitor"]
 
 # load our serialized model from disk
-log.info("[INFO] loading model...")
+print("[INFO] loading model...")
 net = cv2.dnn.readNetFromCaffe(args["prototxt"], args["model"])
 
 # initialize the video writer (we'll instantiate later if need be)
@@ -90,13 +80,6 @@ UPCHC = 15
 DOWNCHC = 30
 CENTERLINE = {}
 
-# instantiate our centroid tracker, then initialize a list to store
-# each of our dlib correlation trackers, followed by a dictionary to
-# map each unique object ID to a TrackableObject
-ct = CentroidTracker(maxDisappeared=40, maxDistance=50)
-#ct = CentroidTracker(maxDisappeared=10, maxDistance=30)
-trackers = []
-trackableObjects = {}
 
 # initialize the total number of frames processed thus far, along
 # with the total number of objects that have moved either up or down
@@ -104,54 +87,17 @@ totalFrames = 0
 totalDown = 0
 totalUp = 0
 totalID = 'ID 0'
-
-
-counters = {}
-
-
-
+counters = {'up':0,'down':0,'id':0}
 sysname = platform.system()
 
 
-def clearnum():
-	log.info("clearnum ")
-	global totalFrames,totalDown,totalUp,totalID
-	totalFrames = 0
-	totalDown = 0
-	totalUp = 0
-	totalID = 'ID 0'
-
-def postnum():
-    # log.info("I'm running on thread %s" % threading.current_thread())
-	log.info('Tick! The time is: %s' % datetime.now())
-	log.info("get all count ",counters)
-	unixstamp = int(time.time())
-	counters['unixstamp'] = unixstamp
-	postjsoninfo(counters)
-
-scheduler = BackgroundScheduler()
-#scheduler.add_job(postnum, 'cron', hour='09-22', minute='59')
-scheduler.add_job(clearnum, 'cron', hour='8', minute='59')
-#scheduler.add_job(clearnum, 'interval', seconds=5)
-#scheduler.add_job(postnum, 'interval', seconds=1)
-scheduler.add_job(postnum, 'cron', hour='09-22', minute='*/5')
-
-try:
-	scheduler.start()
-except (KeyboardInterrupt, SystemExit):
-    scheduler.shutdown()
-
-# def run_threaded(job_func):
-#     job_thread = threading.Thread(target=job_func)
-#     job_thread.start()
-
-# schedule.every(5).seconds.do(run_threaded, job)
-#schedule.every(10).seconds.do(run_threaded, job)
-
+# time ranges
+WKTIMESTART = datetime.strptime(str(datetime.now().date())+'8:59', '%Y-%m-%d%H:%M')
+#WKTIMESTART = datetime.strptime(str(datetime.now().date())+'17:38', '%Y-%m-%d%H:%M')
+WKTIMEEND   = datetime.strptime(str(datetime.now().date())+'23:00', '%Y-%m-%d%H:%M')
 
 # start the frames per second throughput estimator
 fps = FPS().start()
-
 
 videotype = "rtsp"
 if args["input"] is not None:
@@ -161,18 +107,98 @@ if args["input"] is not None:
 		if sysname == "Linux":
 			id = re.split('[:@]',vidsrc[1])
 			counters['ip'] = id[2]
-			log.info(vidsrc)
-			log.info(counters['ip'])
 		else:
 			id = re.split('[:/]',vidsrc[1])
 			counters['ip'] = id[2]
-			log.info("vidsrc %s",vidsrc)
-			log.info("Camera ip is: %s",counters['ip'])
-
 	else:
 		videotype = "file"
-		counters['ip'] = '0.0.0.0' # for test
+		counters['ip'] = '0.0.0.0' # for test file video
 
+log = Log(__name__,counters['ip']).getlog()
+log.info("begain log start")
+log.info("center line is : %s skip-frames %s ", args["line_center"], args["skip_frames"])
+
+savefiledir = '/tmp/savedata/'
+if not os.path.exists(savefiledir):
+	os.mkdir(savefiledir)
+
+savefileinfo = savefiledir+counters['ip']
+log.info(savefileinfo)
+if os.path.isfile(savefileinfo):
+	with open(savefileinfo) as f:
+		line = f.readline()
+		datadict = ast.literal_eval(line)
+		log.info(datadict)
+		totalUp = datadict['up']
+		totalDown = datadict['down']
+		totalID = "ID {}".format(datadict['id'])
+
+		counters['up'] = datadict['up']
+		counters['down'] = datadict['down']
+		counters['id'] = datadict['id'] + 1
+else:
+	log.info("%s not exist",savefileinfo)
+
+# instantiate our centroid tracker, then initialize a list to store
+# each of our dlib correlation trackers, followed by a dictionary to
+# map each unique object ID to a TrackableObject
+ct = CentroidTracker(maxDisappeared=40, maxDistance=50, nextobjectid=counters['id'])
+#ct = CentroidTracker(maxDisappeared=10, maxDistance=30)
+trackers = []
+trackableObjects = {}
+
+def clearnum():
+	log.info("clearnum ")
+	global totalFrames,totalDown,totalUp,totalID
+	totalFrames = 0
+	totalDown = 0
+	totalUp = 0
+	ct.nextObjectID = 0
+	totalID = 'ID 0'
+
+def postnum():
+	# log.info("I'm running on thread %s" % threading.current_thread())
+	log.info('Tick! The time is: %s counters: %s', datetime.now(),counters)
+	log.info("get all count ",counters)
+	unixstamp = int(time.time())
+	counters['unixstamp'] = unixstamp
+	postjsoninfo(counters)
+
+WORKFLAG = True
+def savecounters2file():
+	global  WORKFLAG
+	if WORKFLAG:
+		log.info("save counters file")
+		with open(savefileinfo, 'w') as f:
+			f.write(str(counters))
+	else:
+		log.info("no working")
+
+def stopanalysis():
+	global  WORKFLAG
+	nowtime = datetime.now()
+	log.info('nowtime is %s',nowtime)
+	if nowtime > WKTIMESTART and nowtime < WKTIMEEND:
+		WORKFLAG = True
+		log.info("now time is %s working",WORKFLAG)
+	else:
+		WORKFLAG = False
+		clearnum()
+		savecounters2file()
+		log.info("now time is %s working",WORKFLAG)
+
+scheduler = BackgroundScheduler()
+#scheduler.add_job(postnum, 'cron', hour='09-22', minute='59')
+#scheduler.add_job(clearnum, 'interval', seconds=10)
+scheduler.add_job(clearnum, 'cron', hour='8', minute='58')
+scheduler.add_job(savecounters2file, 'interval', seconds=60)
+scheduler.add_job(stopanalysis, 'interval', seconds=30)
+scheduler.add_job(postnum, 'cron', hour='09-22', minute='*/5')
+
+try:
+	scheduler.start()
+except (KeyboardInterrupt, SystemExit):
+	scheduler.shutdown()
 # if a video path was not supplied, grab a reference to the webcam
 if not args.get("input", False):
 	log.info("[INFO] starting video stream...")
@@ -236,12 +262,14 @@ while True:
 	# less data we have, the faster we can process it), then convert
 	# the frame from BGR to RGB for dlib
 	#frame = imutils.resize(frame, width=500)
-	#frame = imutils.resize(frame, width=450)
+	frame = imutils.resize(frame, width=400,height=350)
 
 	# cut roi from video
 	# fram[y1:y2,x1,x2]  opencv the left up is 0,0
 	#roi = frame[0:200,300:]
 	#roi = frame[0:499,300:]
+	# 352*288
+	#roi = frame[80:,0:]
 	#frame = roi
 
 	rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -271,7 +299,7 @@ while True:
 
 	# check to see if we should run a more computationally expensive
 	# object detection method to aid our tracker
-	if totalFrames % args["skip_frames"] == 0:
+	if totalFrames % args["skip_frames"] == 0 and WORKFLAG:
 		# set the status and initialize our new set of object trackers
 		status = "Detecting"
 		trackers = []
@@ -400,12 +428,18 @@ while True:
 			cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 		cv2.circle(frame, (centroid[0], centroid[1]), 4, (0, 255, 0), -1)
 
+
+	fps.stop()
+	fps.elapsed()
+	fpstext = "{:.2f}".format(fps.fps())
 	# construct a tuple of information we will be displaying on the
 	# frame
 	info = [
 		("Up", totalUp),
 		("Down", totalDown),
 		("Status", status),
+		("ip",counters['ip']),
+		("fps",fpstext)
 	]
 
 	counters['up'] = totalUp
@@ -417,11 +451,6 @@ while True:
 		text = "{}: {}".format(k, v)
 		cv2.putText(frame, text, (10, H - ((i * 20) + 20)),
 			cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-	# add display fps
-	fps.stop()
-	fps.elapsed()
-	fpstext = "{:.2f}".format(fps.fps())
-	cv2.putText(frame,fpstext, (10, H), cv2.FONT_HERSHEY_SIMPLEX,0.6,(0,0,255),2)
 
 	# check to see if we should write the frame to disk
 	if writer is not None:

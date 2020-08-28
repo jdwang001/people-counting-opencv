@@ -4,6 +4,7 @@ import sys
 import cv2
 from wp.log import Log
 import imutils
+import time
 
 log = Log(__name__).getlog()
 
@@ -21,8 +22,8 @@ class FileVideoStream:
         # initialize the file video stream along with the boolean
         # used to indicate if the thread should be stopped or not
         self.stream = cv2.VideoCapture(path)
-	#self.stream.set(cv2.cv.CV_CAP_PROP_FRAME_WIDTH, 640)
-	#self.stream.set(cv2.cv.CV_CAP_PROP_FRAME_HEIGHT, 360)
+        # self.stream.set(cv2.cv.CV_CAP_PROP_FRAME_WIDTH, 640)
+        # self.stream.set(cv2.cv.CV_CAP_PROP_FRAME_HEIGHT, 360)
         self.stopped = False
         # self.queuesize = queueSize
         # self.path = path
@@ -48,7 +49,7 @@ class FileVideoStream:
             while True:
                 if self.stopthread:
                     log.debug("Exit thread,reconnect")
-                    break
+                    return
                 # if the thread indicator variable is set, stop the
                 # thread
                 if self.stopped:
@@ -63,7 +64,6 @@ class FileVideoStream:
                 if not self.Q.full():
                     # read the next frame from the file
                     frame = self.stream.read()
-                    frame = imutils.resize(frame, width=500)
 
                     # if the `grabbed` boolean is `False`, then we have
                     # reached the end of the video file
@@ -79,6 +79,9 @@ class FileVideoStream:
                     #if self.framecount % 6 == 0:
                     #    self.Q.put(frame)
                     self.Q.put(frame)
+                else:
+                    log.info("frame queue is full")
+                    time.sleep(1)
 
         except Exception as exc:
             log.error('FileVideoStream exception %s ',exc)
