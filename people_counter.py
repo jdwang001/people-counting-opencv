@@ -92,9 +92,9 @@ sysname = platform.system()
 
 
 # time ranges
-WKTIMESTART = datetime.strptime(str(datetime.now().date())+'8:59', '%Y-%m-%d%H:%M')
+WKTIMESTART = 85900
+WKTIMEEND   = 230000
 #WKTIMESTART = datetime.strptime(str(datetime.now().date())+'17:38', '%Y-%m-%d%H:%M')
-WKTIMEEND   = datetime.strptime(str(datetime.now().date())+'23:00', '%Y-%m-%d%H:%M')
 
 # start the frames per second throughput estimator
 fps = FPS().start()
@@ -176,16 +176,16 @@ def savecounters2file():
 
 def stopanalysis():
 	global  WORKFLAG
-	nowtime = datetime.now()
+	nowtime = int(time.strftime("%H%M%S"))
 	log.info('nowtime is %s',nowtime)
 	if nowtime > WKTIMESTART and nowtime < WKTIMEEND:
 		WORKFLAG = True
-		log.info("now time is %s working",WORKFLAG)
+		log.info("%s now time is %s working",counters['ip'],WORKFLAG)
 	else:
-		WORKFLAG = False
 		clearnum()
 		savecounters2file()
-		log.info("now time is %s working",WORKFLAG)
+		WORKFLAG = False
+		log.info("%s now time is %s working",counters['ip'],WORKFLAG)
 
 scheduler = BackgroundScheduler()
 #scheduler.add_job(postnum, 'cron', hour='09-22', minute='59')
