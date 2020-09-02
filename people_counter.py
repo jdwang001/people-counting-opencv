@@ -149,12 +149,15 @@ trackableObjects = {}
 
 def clearnum():
 	log.info("clearnum ")
-	global totalFrames,totalDown,totalUp,totalID
+	global totalFrames,totalDown,totalUp,totalID,counters
 	totalFrames = 0
 	totalDown = 0
 	totalUp = 0
 	ct.nextObjectID = 0
 	totalID = 'ID 0'
+	counters['up'] = 0
+	counters['down'] = 0
+	counters['id'] = 0
 
 def postnum():
 	# log.info("I'm running on thread %s" % threading.current_thread())
@@ -394,16 +397,55 @@ while True:
 			# us in which direction the object is moving (negative for
 			# 'up' and positive for 'down')
 			y = [c[1] for c in to.centroids]
+
 			direction = centroid[1] - np.mean(y)
 			to.centroids.append(centroid)
 
+			if direction < 0:
+				to.directions += -1
+			if direction > 0:
+				to.directions += 1
+
+			# log.info('objectid %s',objectID)
+			# log.info('to.centroids is %s',to.centroids)
+			# log.info('-----------------')
+			# log.info('y is %s, np.mean(y) is %s',y,np.mean(y))
+			# log.info('-----------------')
+			# log.info('centroid[1] %s, np.mean  %s',centroid[1],np.mean(y))
+			# log.info('+++++++++++++++++')
+            #
+			# wzd = AmplitudeLimitingShakeOff(y,1,5)
+			# directionfilter = centroid[1] - np.mean(wzd)
+			# log.info('shakeoff is %s',wzd)
+			# log.info("direction:wzddirec %s  %s ",direction,directionfilter)
+			#if objectID == 12 or objectID == 19 or objectID == 20:
+			#	log.info('objectid %s, direction %s to.directions %s counted %s',objectID,direction,to.directions,to.counted)
+
+			# if not to.counted:
+			# 	# if the direction is negative (indicating the object
+			# 	# is moving up) AND the centroid is above the center
+			# 	# line, count the object
+			# 	#if direction < 0 and centroid[1] < H // 2:
+			# 	if direction < 0 and centroid[1] < CENTERLINE["ORG"][1]:
+			# 		# if direction < 0 and centroid[1] < CENTERLINE["ORG"][1] and centroid[1] > CENTERLINE["ORG"][1]-20:
+			# 		totalUp += 1
+			# 		to.counted = True
+            #
+			# 	# if the direction is positive (indicating the object
+			# 	# is moving down) AND the centroid is below the
+			# 	# center line, count the object
+			# 	#elif direction > 0 and centroid[1] > H // 2:
+			# 	elif direction > 0 and centroid[1] > CENTERLINE["ORG"][1]:
+			# 		# elif direction > 0 and centroid[1] > CENTERLINE["ORG"][1] and centroid[1] < CENTERLINE["ORG"][1]+30:
+			# 		totalDown += 1
+			# 		to.counted = True
 			# check to see if the object has been counted or not
 			if not to.counted:
 				# if the direction is negative (indicating the object
 				# is moving up) AND the centroid is above the center
 				# line, count the object
 				#if direction < 0 and centroid[1] < H // 2:
-				if direction < 0 and centroid[1] < CENTERLINE["ORG"][1]:
+				if direction < -3 and centroid[1] < CENTERLINE["ORG"][1] and to.directions < -5:
 				# if direction < 0 and centroid[1] < CENTERLINE["ORG"][1] and centroid[1] > CENTERLINE["ORG"][1]-20:
 					totalUp += 1
 					to.counted = True
@@ -412,10 +454,11 @@ while True:
 				# is moving down) AND the centroid is below the
 				# center line, count the object
 				#elif direction > 0 and centroid[1] > H // 2:
-				elif direction > 0 and centroid[1] > CENTERLINE["ORG"][1]:
+				elif direction > 3 and centroid[1] > CENTERLINE["ORG"][1] and to.directions > 5:
 				# elif direction > 0 and centroid[1] > CENTERLINE["ORG"][1] and centroid[1] < CENTERLINE["ORG"][1]+30:
 					totalDown += 1
 					to.counted = True
+
 
 		# store the trackable object in our dictionary
 		trackableObjects[objectID] = to
