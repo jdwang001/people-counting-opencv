@@ -1,14 +1,17 @@
 import requests
 import json
 import time
-
+from wp.log import Log
+from wp import common
 
 headers = {'content-type': 'application/json', 'Connection': 'close'}
 WPTIMEOUT = 3
-SERVERADD = 'https://mancy.wifipix.com/api/data/cameraLog  '
+SERVERADD = 'https://mancy.wifipix.com/api/data/cameraLog'
+
+log = Log(__name__,common.LOGFN).getlog()
 
 def postjsoninfo(jsondata):
-    print("postmachinfo is ", json.dumps(jsondata))
+    log.info("postmachinfo is %s", json.dumps(jsondata))
     trycount = WPTIMEOUT
     while trycount > 0:
         try:
@@ -17,13 +20,13 @@ def postjsoninfo(jsondata):
 
             # Consider any status other than 2xx an error
             if not response.status_code // 100 == 2:
-                print("PostMachInfo post is error %s, %d", response, trycount)
+                log.info("PostMachInfo post is error %s, %d", response, trycount)
             else:
-                print("PostMachInfo post ok")
+                log.info("PostMachInfo post ok")
                 break
         except requests.exceptions.RequestException as e:
-            print("PostMachInfo is error ".format(e))
+            log.error("PostMachInfo is error %s ",format(e))
 
         trycount = trycount - 1
         time.sleep(3)
-    print("exit postmachinfo")
+    log.info("exit postmachinfo")

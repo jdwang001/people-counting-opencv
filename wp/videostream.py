@@ -5,8 +5,9 @@ import cv2
 from wp.log import Log
 import imutils
 import time
+from wp import common
 
-log = Log(__name__).getlog()
+log = Log(__name__,common.LOGFN).getlog()
 
 # import the Queue class from Python 3
 if sys.version_info >= (3, 0):

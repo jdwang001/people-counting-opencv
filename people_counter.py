@@ -14,7 +14,6 @@ import cv2
 from pyimagesearch.centroidtracker import CentroidTracker
 from pyimagesearch.trackableobject import TrackableObject
 from datetime import datetime
-from wp.videostream import FileVideoStream
 from imutils.video import VideoStream
 from imutils.video import FPS
 import numpy as np
@@ -25,9 +24,9 @@ import dlib
 import ast
 import re
 import os
-from wp.tools import postjsoninfo
 from apscheduler.schedulers.background import BackgroundScheduler
 from wp.log import Log
+from wp import common
 import platform
 
 
@@ -91,6 +90,8 @@ counters = {'up':0,'down':0,'id':0}
 sysname = platform.system()
 
 
+LINUXPATH = '/home/wp/work/savedata/'
+OSXPATH = '/tmp/savedata/'
 # time ranges
 WKTIMESTART = 85900
 WKTIMEEND   = 230000
@@ -98,6 +99,8 @@ WKTIMEEND   = 230000
 
 # start the frames per second throughput estimator
 fps = FPS().start()
+
+savefiledir = LINUXPATH
 
 videotype = "rtsp"
 if args["input"] is not None:
@@ -114,17 +117,27 @@ if args["input"] is not None:
 		videotype = "file"
 		counters['ip'] = '0.0.0.0' # for test file video
 
+if sysname == "Linux":
+	savefiledir = LINUXPATH
+else:
+	savefiledir = OSXPATH
+
+common.LOGFN = counters['ip']
+
 log = Log(__name__,counters['ip']).getlog()
 log.info("begain log start")
 log.info("center line is : %s skip-frames %s ", args["line_center"], args["skip_frames"])
 
-savefiledir = '/tmp/savedata/'
+from wp.tools import postjsoninfo
+from wp.videostream import FileVideoStream
+
 if not os.path.exists(savefiledir):
 	os.mkdir(savefiledir)
 
 savefileinfo = savefiledir+counters['ip']
 log.info(savefileinfo)
 if os.path.isfile(savefileinfo):
+	log.info("Get save data ,read from %s",savefileinfo)
 	with open(savefileinfo) as f:
 		line = f.readline()
 		datadict = ast.literal_eval(line)
@@ -136,6 +149,7 @@ if os.path.isfile(savefileinfo):
 		counters['up'] = datadict['up']
 		counters['down'] = datadict['down']
 		counters['id'] = datadict['id'] + 1
+	log.info("Save data %s",counters)
 else:
 	log.info("%s not exist",savefileinfo)
 

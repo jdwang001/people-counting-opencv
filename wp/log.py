@@ -4,6 +4,8 @@ import os
 from logging.handlers import RotatingFileHandler
 
 
+
+
 class Log(object):
 
     def __init__(self, logger=None, log_cate='search'):
